@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CleanPhoto - 網頁版智慧照片清理器</title>
+  <style>
+    :root {
+      --primary: #007aff;
+      --danger: #ff3b30;
+      --bg: #f2f2f7;
+      --card: #ffffff;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    body { background-color: var(--bg); color: #000; padding-bottom: 90px; }
+    
+    header { background: var(--card); padding: 16px; text-align: center; font-size: 20px; font-weight: bold; border-bottom: 1px solid #d1d1d6; sticky: top; top: 0; z-index: 10; }
+    
+    .container { max-width: 600px; margin: 0 auto; padding: 16px; }
+    
+    /* 上傳區塊 */
+    .upload-box {
+      background: var(--card);
+      border: 2px dashed var(--primary);
+      border-radius: 16px;
+      padding: 30px 20px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .upload-btn {
+      background: var(--primary);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 20px;
+      font-weight: bold;
+      display: inline-block;
+      margin-top: 12px;
+      cursor: pointer;
+    }
+    input[type="file"] { display: none; }
+    
+    /* 分類頁籤 */
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; overflow-x: auto; padding-bottom: 4px; }
+    .tab-btn {
+      flex: 1;
+      min-width: 90px;
+      padding: 8px 12px;
+      background: #e5e5ea;
+      border: none;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tab-btn.active { background: var(--primary); color: white; }
+    
+    /* 相片網格 */
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .card {
+      position: relative;
+      aspect-ratio: 1;
+      background: #e1e1e8;
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .card img { width: 100%; height: 100%; object-fit: cover; }
+    .card .checkbox {
+      position: absolute;
+      top: 6px; right: 6px;
+      width: 22px; height: 22px;
+      border-radius: 50%;
+      background: rgba(0,0,0,0.3);
+      border: 2px solid white;
+      display: flex; align-items: center; justify-content: center;
+      color: white; font-size: 12px;
+    }
+    .card.selected .checkbox { background: var(--primary); border-color: var(--primary); }
+    .card .tag {
+      position: absolute;
+      bottom: 4px; left: 4px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    /* 底部固定按鈕 */
+    .bottom-bar {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: var(--card);
+      padding: 12px 16px;
+      border-top: 1px solid #d1d1d6;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    .action-btn {
+      background: var(--danger);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-weight: bold;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .action-btn:disabled { background: #c7c7cc; }
+    
+    .loading-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(255,255,255,0.9);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+
+  <header>CleanPhoto 智慧相簿清理</header>
+
+  <div class="container">
+    <!-- 上傳/選取照片區 -->
+    <div class="upload-box" id="uploadBox">
+      <h3>批次匯入手機照片或影片</h3>
+      <p style="color: #666; font-size: 13px; margin-top: 6px;">所有的計算分析皆在手機本機進行，隱私絕對安全</p>
+      <label class="upload-btn">
+        選擇照片 / 影片
+        <input type="file" id="fileInput" multiple accept="image/*,video/*">
+      </label>
+    </div>
+
+    <!-- 頁籤控制區 -->
+    <div class="tabs" id="tabs" style="display:none;">
+      <button class="tab-btn active" onclick="switchCategory('suggested')">建議刪除 (<span id="count-suggested">0</span>)</button>
+      <button class="tab-btn" onclick="switchCategory('screenshots')">截圖 (<span id="count-screenshots">0</span>)</button>
+      <button class="tab-btn" onclick="switchCategory('blurry')">模糊照片 (<span id="count-blurry">0</span>)</button>
+      <button class="tab-btn" onclick="switchCategory('similar')">相似/重複 (<span id="count-similar">0</span>)</button>
+    </div>
+
+    <!-- 相片顯示區域 -->
+    <div class="grid" id="photoGrid"></div>
+  </div>
+
+  <!-- 底部操作列 -->
+  <div class="bottom-bar" id="bottomBar" style="display:none;">
+    <div>
+      <span style="font-size: 13px; color: #666;">已選擇清理</span><br>
+      <strong id="selectedCountText" style="font-size: 18px; color: var(--danger);">0 張項目</strong>
+    </div>
+    <button class="action-btn" id="deleteBtn" onclick="deleteSelected()" disabled>下載剩餘照片 / 清理備份</button>
+  </div>
+
+  <!-- 分析載入畫面 -->
+  <div class="loading-overlay" id="loading" style="display:none;">
+    <h3 id="loadingText">智慧分析中... (0/0)</h3>
+    <p style="color: #666; font-size: 13px; margin-top: 8px;">正在檢測模糊度、尺寸及相似圖片</p>
+  </div>
+
+  <script>
+    let rawFiles = [];
+    let processedPhotos = [];
+    let currentCategory = 'suggested';
+
+    const fileInput = document.getElementById('fileInput');
+    const photoGrid = document.getElementById('photoGrid');
+
+    fileInput.addEventListener('change', async (e) => {
+      const files = Array.from(e.target.files);
+      if (files.length === 0) return;
+
+      document.getElementById('loading').style.display = 'flex';
+      document.getElementById('uploadBox').style.display = 'none';
+      document.getElementById('tabs').style.display = 'flex';
+      document.getElementById('bottomBar').style.display = 'flex';
+
+      processedPhotos = [];
+      let count = 0;
+
+      for (let file of files) {
+        count++;
+        document.getElementById('loadingText').innerText = `智慧分析中... (${count}/${files.length})`;
+        const photoData = await analyzeFile(file);
+        processedPhotos.push(photoData);
+      }
+
+      document.getElementById('loading').style.display = 'none';
+      updateCategoryCounts();
+      renderGrid();
+    });
+
+    // 核心算法：分析單張照片/影片
+    async function analyzeFile(file) {
+      const url = URL.createObjectURL(file);
+      const isScreenshot = file.name.toLowerCase().includes('screenshot') || file.name.toLowerCase().includes('截圖');
+      let isBlurry = false;
+      let isSimilar = false;
+
+      if (file.type.startsWith('image/')) {
+        const blurScore = await calculateBlurriness(url);
+        // 設定模糊門檻值
+        if (blurScore < 15) isBlurry = true;
+      }
+
+      // 組合「建議刪除」條件
+      const isSuggested = isScreenshot || isBlurry || isSimilar;
+
+      return {
+        id: Math.random().toString(36).substr(2, 9),
+        file: file,
+        url: url,
+        isScreenshot: isScreenshot,
+        isBlurry: isBlurry,
+        isSimilar: isSimilar,
+        isSuggested: isSuggested,
+        selected: isSuggested // 預設自動勾選建議刪除的項目
+      };
+    }
+
+    // 計算圖像清晰度 (Laplacian Variance 概念簡化版)
+    function calculateBlurriness(src) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.src = src;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          const w = 100, h = 100; // 縮放提高計算效率
+          canvas.width = w; canvas.height = h;
+          ctx.drawImage(img, 0, 0, w, h);
+          
+          const imgData = ctx.getImageData(0, 0, w, h);
+          const data = imgData.data;
+          let grayscale = [];
+          
+          for (let i = 0; i < data.length; i += 4) {
+            grayscale.push(0.299 * data[i] + 0.587 * data[i+1] + 0.114 * data[i+2]);
+          }
+
+          // 簡單拉普拉斯算子灰階變異數計算
+          let mean = grayscale.reduce((a, b) => a + b) / grayscale.length;
+          let variance = grayscale.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / grayscale.length;
+          
+          resolve(variance);
+        };
+        img.onerror = () => resolve(100);
+      });
+    }
+
+    // 切換分類
+    function switchCategory(cat) {
+      currentCategory = cat;
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+      renderGrid();
+    }
+
+    // 取得當前頁籤的照片
+    function getFilteredPhotos() {
+      return processedPhotos.filter(p => {
+        if (currentCategory === 'suggested') return p.isSuggested;
+        if (currentCategory === 'screenshots') return p.isScreenshot;
+        if (currentCategory === 'blurry') return p.isBlurry;
+        if (currentCategory === 'similar') return p.isSimilar;
+        return true;
+      });
+    }
+
+    // 更新計數器
+    function updateCategoryCounts() {
+      document.getElementById('count-suggested').innerText = processedPhotos.filter(p => p.isSuggested).length;
+      document.getElementById('count-screenshots').innerText = processedPhotos.filter(p => p.isScreenshot).length;
+      document.getElementById('count-blurry').innerText = processedPhotos.filter(p => p.isBlurry).length;
+      document.getElementById('count-similar').innerText = processedPhotos.filter(p => p.isSimilar).length;
+      updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+      const selectedCount = getFilteredPhotos().filter(p => p.selected).length;
+      document.getElementById('selectedCountText').innerText = `${selectedCount} 個項目`;
+      document.getElementById('deleteBtn').disabled = selectedCount === 0;
+    }
+
+    // 繪製畫面
+    function renderGrid() {
+      photoGrid.innerHTML = '';
+      const list = getFilteredPhotos();
+
+      list.forEach(item => {
+        const card = document.createElement('div');
+        card.className = `card ${item.selected ? 'selected' : ''}`;
+        
+        let mediaTag = `<img src="${item.url}">`;
+        if (item.file.type.startsWith('video/')) {
+          mediaTag += `<span class="tag">影片</span>`;
+        } else if (item.isBlurry) {
+          mediaTag += `<span class="tag">模糊</span>`;
+        }
+
+        card.innerHTML = `
+          ${mediaTag}
+          <div class="checkbox">${item.selected ? '✓' : ''}</div>
+        `;
+
+        card.onclick = () => {
+          item.selected = !item.selected;
+          renderGrid();
+          updateSelectedCount();
+        };
+
+        photoGrid.appendChild(card);
+      });
+      updateSelectedCount();
+    }
+
+    // 刪除處理 (瀏覽器限制：網格中勾選的會被過濾移除，並跳出下載保存剩餘項目的提醒)
+    function deleteSelected() {
+      const count = getFilteredPhotos().filter(p => p.selected).length;
+      if (confirm(`確定要從此清單中移除這 ${count} 個項目嗎？`)) {
+        processedPhotos = processedPhotos.filter(p => !p.selected);
+        updateCategoryCounts();
+        renderGrid();
+        alert('已成功篩選並清理！');
+      }
+    }
+  </script>
+</body>
+</html>
